@@ -30,6 +30,12 @@ export const complaintService = {
     return response.data;
   },
 
+  // READ: Student personal complaints by Email
+  getByEmail: async (email) => {
+    const response = await api.get(`/student/email/${encodeURIComponent(email)}`);
+    return response.data;
+  },
+
   // CREATE: Submit new complaint (Student)
   create: async (complaintData) => {
     const response = await api.post('', complaintData);
