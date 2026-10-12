@@ -1,7 +1,7 @@
 import axios from 'axios';
 
-// Backend Spring Boot REST API Base URL
-const API_BASE_URL = 'http://localhost:8080/api/complaints';
+// Live Render Backend REST API Base URL
+const API_BASE_URL = 'https://my-hostel-backend.onrender.com/api/complaints';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

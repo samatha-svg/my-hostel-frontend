@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const AUTH_API_URL = 'http://localhost:8080/api/auth';
+// Live Render Auth API URL
+const AUTH_API_URL = 'https://my-hostel-backend.onrender.com/api/auth';
 
 const authApi = axios.create({
   baseURL: AUTH_API_URL,
