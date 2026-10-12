@@ -29,7 +29,8 @@ import {
   LogOut,
   Mail,
   Lock,
-  User as UserIcon
+  User as UserIcon,
+  FileText
 } from 'lucide-react';
 
 const CATEGORIES = [
@@ -54,12 +55,12 @@ const STAFF_LIST = [
 ];
 
 function App() {
-  // Authentication State
+  // Current Logged-in User
   const [currentUser, setCurrentUser] = useState(authService.getCurrentUser());
-  const [authTab, setAuthTab] = useState('LOGIN'); // 'LOGIN' or 'REGISTER'
-  const [authRole, setAuthRole] = useState('STUDENT'); // 'STUDENT' or 'WARDEN'
   
-  // Auth Form Inputs
+  // Auth Form State (Login / Register)
+  const [authTab, setAuthTab] = useState('LOGIN');
+  const [authRole, setAuthRole] = useState('STUDENT');
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({
     name: '',
@@ -73,77 +74,39 @@ function App() {
   });
   const [authError, setAuthError] = useState('');
 
-  // Main App State
-  const [activePortal, setActivePortal] = useState('STUDENT');
-  const [wardenViewMode, setWardenViewMode] = useState('KANBAN');
+  // General App State
   const [complaints, setComplaints] = useState([]);
   const [stats, setStats] = useState({ total: 0, pending: 0, inProgress: 0, resolved: 0 });
   const [loading, setLoading] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [toast, setToast] = useState(null);
 
-  // Student portal filter
-  const [studentSearchRoll, setStudentSearchRoll] = useState('');
-
-  // Warden portal filters
+  // Warden controls
+  const [wardenViewMode, setWardenViewMode] = useState('KANBAN');
   const [wardenSearch, setWardenSearch] = useState('');
   const [selectedStaffFilter, setSelectedStaffFilter] = useState('ALL');
 
-  // Toast
-  const [toast, setToast] = useState(null);
+  // Student complaint form input (Category, Priority, Description)
+  const [category, setCategory] = useState('Electrical');
+  const [priority, setPriority] = useState('Medium');
+  const [description, setDescription] = useState('');
 
-  // Complaint Form Data
-  const [complaintForm, setComplaintForm] = useState({
-    studentName: '',
-    rollNo: '',
-    studentEmail: '',
-    studentPhone: '',
-    hostelBlock: 'Block A',
-    roomNo: '',
-    category: 'Electrical',
-    priority: 'Medium',
-    description: '',
-  });
-
-  // Edit Modal State
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editItem, setEditItem] = useState(null);
-
-  // Warden Resolution Modal State
+  // Modals for Warden
   const [isResolveModalOpen, setIsResolveModalOpen] = useState(false);
   const [resolveItem, setResolveItem] = useState(null);
   const [assignedStaffInput, setAssignedStaffInput] = useState('');
   const [statusInput, setStatusInput] = useState('In Progress');
   const [remarksInput, setRemarksInput] = useState('');
 
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Sync logged in user details to complaint form
-  useEffect(() => {
-    if (currentUser) {
-      if (currentUser.role === 'WARDEN') {
-        setActivePortal('WARDEN');
-      } else {
-        setActivePortal('STUDENT');
-        setComplaintForm(prev => ({
-          ...prev,
-          studentName: currentUser.name || '',
-          rollNo: currentUser.rollNo || '',
-          studentEmail: currentUser.email || '',
-          studentPhone: currentUser.phone || '',
-          hostelBlock: currentUser.hostelBlock || 'Block A',
-          roomNo: currentUser.roomNo || ''
-        }));
-        if (currentUser.rollNo) {
-          setStudentSearchRoll(currentUser.rollNo);
-        }
-      }
-    }
-  }, [currentUser]);
-
-  // Fetch Complaints
+  // Fetch Complaints from Spring Boot
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -184,7 +147,7 @@ function App() {
     try {
       const user = await authService.login(loginForm.email, loginForm.password);
       setCurrentUser(user);
-      showToast(`Welcome back, ${user.name}!`);
+      showToast(`Welcome, ${user.name}!`);
     } catch (err) {
       const msg = err.response?.data?.error || err.message || 'Login failed';
       setAuthError(msg);
@@ -201,7 +164,7 @@ function App() {
       };
       const user = await authService.register(payload);
       setCurrentUser(user);
-      showToast(`Account created successfully! Welcome, ${user.name}`);
+      showToast(`Account created! Welcome, ${user.name}`);
     } catch (err) {
       const msg = err.response?.data?.error || err.message || 'Registration failed';
       setAuthError(msg);
@@ -211,10 +174,10 @@ function App() {
   const handleLogout = () => {
     authService.logout();
     setCurrentUser(null);
-    showToast('Logged out successfully.');
+    showToast('Logged out.');
   };
 
-  // Demo Fast Login
+  // Fast Demo Logins for Viva
   const handleQuickDemoLogin = (role) => {
     if (role === 'STUDENT') {
       const demoStudent = {
@@ -242,30 +205,51 @@ function App() {
   };
 
   // ----------------------------------------------------------------
-  // COMPLAINT CRUD HANDLERS
+  // STUDENT ACTIONS (Raise & Track only)
   // ----------------------------------------------------------------
-  const handleStudentSubmit = async (e) => {
+  const handleStudentRaiseComplaint = async (e) => {
     e.preventDefault();
-    if (!complaintForm.studentName || !complaintForm.rollNo || !complaintForm.roomNo || !complaintForm.description) {
-      showToast('Please fill in all mandatory fields (*)', 'error');
+    if (!description.trim()) {
+      showToast('Please describe the maintenance issue.', 'error');
       return;
     }
 
+    const payload = {
+      studentName: currentUser.name,
+      rollNo: currentUser.rollNo || 'N/A',
+      studentEmail: currentUser.email,
+      studentPhone: currentUser.phone || '',
+      hostelBlock: currentUser.hostelBlock || 'Block A',
+      roomNo: currentUser.roomNo || 'N/A',
+      category: category,
+      priority: priority,
+      description: description.trim(),
+      status: 'Pending'
+    };
+
     try {
-      const created = await complaintService.create(complaintForm);
-      showToast(`Complaint #${created.id} submitted! Status is Pending.`);
-      setComplaintForm(prev => ({
-        ...prev,
-        description: ''
-      }));
-      setStudentSearchRoll(complaintForm.rollNo);
+      const created = await complaintService.create(payload);
+      showToast(`Complaint #${created.id} submitted! Status: Pending.`);
+      setDescription('');
       fetchData();
     } catch (err) {
       console.error(err);
-      showToast('Failed to submit complaint. Backend may be offline.', 'error');
+      showToast('Failed to submit complaint.', 'error');
     }
   };
 
+  // Student sees ONLY their own complaints
+  const myComplaints = complaints.filter(c => {
+    if (!currentUser) return false;
+    const matchEmail = c.studentEmail && c.studentEmail.toLowerCase() === currentUser.email.toLowerCase();
+    const matchRoll = currentUser.rollNo && c.rollNo && c.rollNo.toLowerCase() === currentUser.rollNo.toLowerCase();
+    const matchName = currentUser.name && c.studentName && c.studentName.toLowerCase() === currentUser.name.toLowerCase();
+    return matchEmail || matchRoll || matchName;
+  });
+
+  // ----------------------------------------------------------------
+  // WARDEN ACTIONS (View all & Update status only)
+  // ----------------------------------------------------------------
   const handleQuickStartRepair = async (comp) => {
     let defaultStaff = STAFF_LIST[0];
     if (comp.category.includes('Plumbing')) defaultStaff = 'Suresh (Plumber)';
@@ -278,11 +262,11 @@ function App() {
     try {
       await complaintService.assignStaff(comp.id, staff);
       await complaintService.updateStatus(comp.id, 'In Progress', 'Staff dispatched to inspect issue');
-      showToast(`Task #${comp.id} is now IN PROGRESS! Assigned to ${staff}`);
+      showToast(`Complaint #${comp.id} moved to IN PROGRESS! Assigned to ${staff}`);
       fetchData();
     } catch (err) {
       console.error(err);
-      showToast('Failed to start repair', 'error');
+      showToast('Failed to update status', 'error');
     }
   };
 
@@ -290,19 +274,8 @@ function App() {
     setResolveItem(comp);
     setAssignedStaffInput(comp.assignedStaff || STAFF_LIST[0]);
     setStatusInput('Resolved');
-    setRemarksInput(comp.resolutionRemarks || 'Issue inspected, repaired and verified successfully.');
+    setRemarksInput(comp.resolutionRemarks || 'Issue inspected, repaired and verified.');
     setIsResolveModalOpen(true);
-  };
-
-  const handleReopenTask = async (id) => {
-    try {
-      await complaintService.updateStatus(id, 'In Progress', 'Task reopened for further check');
-      showToast(`Complaint #${id} reopened to In Progress`);
-      fetchData();
-    } catch (err) {
-      console.error(err);
-      showToast('Failed to reopen task', 'error');
-    }
   };
 
   const handleSaveResolution = async (e) => {
@@ -321,6 +294,17 @@ function App() {
     } catch (err) {
       console.error(err);
       showToast('Error saving resolution', 'error');
+    }
+  };
+
+  const handleReopenTask = async (id) => {
+    try {
+      await complaintService.updateStatus(id, 'In Progress', 'Task reopened for further check');
+      showToast(`Complaint #${id} reopened to In Progress`);
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to reopen task', 'error');
     }
   };
 
@@ -354,17 +338,7 @@ function App() {
     }
   };
 
-  // Filtered list for student tracking
-  const studentFilteredComplaints = complaints.filter(comp => {
-    if (!studentSearchRoll.trim()) return true;
-    const term = studentSearchRoll.toLowerCase();
-    return comp.rollNo.toLowerCase().includes(term) ||
-           comp.studentName.toLowerCase().includes(term) ||
-           (comp.studentEmail && comp.studentEmail.toLowerCase().includes(term)) ||
-           comp.roomNo.toLowerCase().includes(term);
-  });
-
-  // Filtered list for Warden / Staff
+  // Warden Filtered List
   const wardenFilteredComplaints = complaints.filter(comp => {
     const matchesStaff = selectedStaffFilter === 'ALL' || 
       (comp.assignedStaff && comp.assignedStaff.includes(selectedStaffFilter));
@@ -384,7 +358,7 @@ function App() {
   const resolvedTasks = wardenFilteredComplaints.filter(c => c.status === 'Resolved');
 
   // ================================================================
-  // RENDER SCREEN: 1. AUTH SCREEN (IF NOT LOGGED IN)
+  // 1. SCREEN: LOGIN / REGISTER (IF NOT AUTHENTICATED)
   // ================================================================
   if (!currentUser) {
     return (
@@ -395,10 +369,9 @@ function App() {
               <Building2 size={30} />
             </div>
             <h2>Hostel Maintenance System</h2>
-            <p>Campus Complaint Management & Resolution Portal</p>
+            <p>Please login or register to continue</p>
           </div>
 
-          {/* Login vs Register Tabs */}
           <div className="auth-tabs">
             <button 
               className={`auth-tab-btn ${authTab === 'LOGIN' ? 'active' : ''}`}
@@ -417,7 +390,6 @@ function App() {
           </div>
 
           <div className="auth-body">
-            {/* Error Message */}
             {authError && (
               <div style={{
                 background: '#fee2e2',
@@ -437,7 +409,7 @@ function App() {
               </div>
             )}
 
-            {/* TAB A: SIGN IN FORM */}
+            {/* TAB A: LOGIN */}
             {authTab === 'LOGIN' && (
               <form onSubmit={handleLoginSubmit}>
                 <div className="form-group">
@@ -445,7 +417,7 @@ function App() {
                   <input 
                     type="email" 
                     className="form-control" 
-                    placeholder="e.g. student@hostel.edu"
+                    placeholder="e.g. amrutha@hostel.edu"
                     value={loginForm.email}
                     onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
                     required
@@ -457,7 +429,7 @@ function App() {
                   <input 
                     type="password" 
                     className="form-control" 
-                    placeholder="Enter your password"
+                    placeholder="Enter password"
                     value={loginForm.password}
                     onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
                     required
@@ -466,13 +438,13 @@ function App() {
 
                 <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '8px' }}>
                   <LogIn size={16} />
-                  Sign In to Dashboard
+                  Sign In
                 </button>
 
-                {/* Quick Demo Logins for easy Viva */}
+                {/* Quick Demo Access */}
                 <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #e2e8f0', textAlign: 'center' }}>
                   <p style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 600, marginBottom: '8px' }}>
-                    QUICK DEMO ACCESS (ONE-CLICK)
+                    QUICK DEMO ACCESS (FOR DEMO/VIVA)
                   </p>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button 
@@ -496,10 +468,9 @@ function App() {
               </form>
             )}
 
-            {/* TAB B: REGISTER FORM */}
+            {/* TAB B: REGISTER */}
             {authTab === 'REGISTER' && (
               <form onSubmit={handleRegisterSubmit}>
-                {/* Role Pill Switcher */}
                 <div className="role-pill-group">
                   <button
                     type="button"
@@ -507,7 +478,7 @@ function App() {
                     onClick={() => setAuthRole('STUDENT')}
                   >
                     <GraduationCap size={16} />
-                    Student
+                    Register as Student
                   </button>
                   <button
                     type="button"
@@ -515,7 +486,7 @@ function App() {
                     onClick={() => setAuthRole('WARDEN')}
                   >
                     <ShieldCheck size={16} />
-                    Warden / Staff
+                    Register as Warden
                   </button>
                 </div>
 
@@ -524,7 +495,7 @@ function App() {
                   <input 
                     type="text" 
                     className="form-control" 
-                    placeholder="e.g. Rahul Sharma"
+                    placeholder="e.g. Amrutha"
                     value={registerForm.name}
                     onChange={(e) => setRegisterForm({ ...registerForm, name: e.target.value })}
                     required
@@ -532,11 +503,11 @@ function App() {
                 </div>
 
                 <div className="form-group">
-                  <label>Email Address * (Used for login, must be unique)</label>
+                  <label>Email Address * (Unique)</label>
                   <input 
                     type="email" 
                     className="form-control" 
-                    placeholder="e.g. rahul@hostel.edu"
+                    placeholder="e.g. amrutha@hostel.edu"
                     value={registerForm.email}
                     onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })}
                     required
@@ -548,14 +519,13 @@ function App() {
                   <input 
                     type="password" 
                     className="form-control" 
-                    placeholder="Choose a strong password"
+                    placeholder="Enter password"
                     value={registerForm.password}
                     onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })}
                     required
                   />
                 </div>
 
-                {/* Additional Fields for Students */}
                 {authRole === 'STUDENT' && (
                   <>
                     <div className="form-grid">
@@ -608,9 +578,9 @@ function App() {
                   </>
                 )}
 
-                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '10px' }}>
+                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '8px' }}>
                   <UserPlus size={16} />
-                  Complete Registration & Login
+                  Complete Registration
                 </button>
               </form>
             )}
@@ -621,8 +591,10 @@ function App() {
   }
 
   // ================================================================
-  // RENDER SCREEN: 2. LOGGED-IN MAIN APPLICATION
+  // 2. SCREEN: LOGGED IN APPLICATION (STRICTLY ROLE-BASED)
   // ================================================================
+  const isStudent = currentUser.role === 'STUDENT';
+
   return (
     <div className="app-container">
       {/* Toast Alert */}
@@ -648,7 +620,7 @@ function App() {
         </div>
       )}
 
-      {/* Main Top Header */}
+      {/* Top Navbar */}
       <header className="app-header">
         <div className="brand">
           <div className="brand-icon">
@@ -656,149 +628,102 @@ function App() {
           </div>
           <div>
             <h1>Hostel Maintenance Management System</h1>
-            <p>Smart Campus Maintenance (React + Spring Boot + MySQL)</p>
+            <p>
+              {isStudent 
+                ? '🎓 Student Portal — Raise & Track Your Maintenance Issues'
+                : '🛡️ Warden & Maintenance Authority Desk — Manage & Solve Complaints'}
+            </p>
           </div>
         </div>
 
         <div className="header-actions">
-          {/* User Profile Badge */}
+          {/* User Badge */}
           <div className="user-badge">
-            <UserIcon size={14} color="#4f46e5" />
+            {isStudent ? <GraduationCap size={16} color="#4f46e5" /> : <ShieldCheck size={16} color="#d97706" />}
             <span>
-              <strong>{currentUser.name}</strong> 
-              <span style={{ color: '#64748b', fontSize: '0.75rem', marginLeft: '4px' }}>
-                ({currentUser.role === 'WARDEN' ? '🔑 Warden' : `🎓 Room ${currentUser.roomNo || ''}`})
+              <strong>{currentUser.name}</strong>
+              <span style={{ color: '#64748b', fontSize: '0.78rem', marginLeft: '6px' }}>
+                ({isStudent ? `Student • Room ${currentUser.roomNo}, ${currentUser.hostelBlock}` : 'Warden / Staff'})
               </span>
             </span>
           </div>
 
-          <button className="btn btn-secondary btn-sm" onClick={fetchData} title="Refresh Data">
+          <button className="btn btn-secondary btn-sm" onClick={fetchData} title="Refresh">
             <RefreshCw size={14} className={loading ? 'spin' : ''} />
           </button>
 
-          {/* Logout Button */}
-          <button className="btn btn-danger btn-sm" onClick={handleLogout} title="Sign Out">
+          <button className="btn btn-danger btn-sm" onClick={handleLogout}>
             <LogOut size={14} />
             Logout
           </button>
         </div>
       </header>
 
-      {/* Dual Portal Switcher Tabs */}
-      <div className="portal-switcher">
-        <button 
-          className={`portal-tab ${activePortal === 'STUDENT' ? 'active' : ''}`}
-          onClick={() => setActivePortal('STUDENT')}
-        >
-          <GraduationCap size={18} />
-          🎓 Student Portal (Raise & Track Issues)
-        </button>
-
-        <button 
-          className={`portal-tab ${activePortal === 'WARDEN' ? 'active warden' : ''}`}
-          onClick={() => setActivePortal('WARDEN')}
-        >
-          <ShieldCheck size={18} />
-          🔑 Warden & Staff Desk (Task Board: Pending ➔ Working ➔ Solved)
-        </button>
-      </div>
-
       {/* ======================================================== */}
-      {/* 1. STUDENT PORTAL VIEW                                   */}
+      {/* A. STRICT STUDENT VIEW: ONLY RAISE & TRACK STATUS         */}
       {/* ======================================================== */}
-      {activePortal === 'STUDENT' && (
+      {isStudent && (
         <div className="student-layout">
-          {/* Left Column: Complaint Submission Form */}
+          {/* Left Column: Raise Maintenance Request */}
           <div className="card">
             <div className="card-title">
               <Send size={18} color="#4f46e5" />
               <span>Raise Maintenance Complaint</span>
             </div>
 
-            <form onSubmit={handleStudentSubmit}>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label>Student Name *</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    placeholder="e.g. Rahul Sharma"
-                    value={complaintForm.studentName}
-                    onChange={(e) => setComplaintForm({...complaintForm, studentName: e.target.value})}
-                    required
-                  />
-                </div>
+            {/* Read-Only Student Info Banner */}
+            <div style={{
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '10px',
+              padding: '12px 14px',
+              marginBottom: '16px',
+              fontSize: '0.84rem'
+            }}>
+              <div><strong>Student Name:</strong> {currentUser.name} ({currentUser.rollNo})</div>
+              <div style={{ color: '#64748b', marginTop: '2px' }}>
+                <strong>Assigned Room:</strong> {currentUser.hostelBlock} • Room #{currentUser.roomNo}
+              </div>
+              <div style={{ color: '#64748b', marginTop: '2px' }}>
+                <strong>Registered Email:</strong> {currentUser.email}
+              </div>
+            </div>
 
-                <div className="form-group">
-                  <label>Roll Number / ID *</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    placeholder="e.g. 24EG104D49"
-                    value={complaintForm.rollNo}
-                    onChange={(e) => setComplaintForm({...complaintForm, rollNo: e.target.value})}
-                    required
-                  />
-                </div>
+            <form onSubmit={handleStudentRaiseComplaint}>
+              <div className="form-group">
+                <label>Problem Category *</label>
+                <select 
+                  className="form-control"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                >
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
 
-                <div className="form-group">
-                  <label>Hostel Block *</label>
-                  <select 
-                    className="form-control"
-                    value={complaintForm.hostelBlock}
-                    onChange={(e) => setComplaintForm({...complaintForm, hostelBlock: e.target.value})}
-                  >
-                    {BLOCKS.map(b => <option key={b} value={b}>{b}</option>)}
-                  </select>
-                </div>
+              <div className="form-group">
+                <label>Priority Level</label>
+                <select 
+                  className="form-control"
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value)}
+                >
+                  <option value="Low">Low (Can wait 2-3 days)</option>
+                  <option value="Medium">Medium (Fix within 24 hours)</option>
+                  <option value="High">High (Immediate / Urgent repair needed)</option>
+                </select>
+              </div>
 
-                <div className="form-group">
-                  <label>Room Number *</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    placeholder="e.g. 303"
-                    value={complaintForm.roomNo}
-                    onChange={(e) => setComplaintForm({...complaintForm, roomNo: e.target.value})}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Problem Category *</label>
-                  <select 
-                    className="form-control"
-                    value={complaintForm.category}
-                    onChange={(e) => setComplaintForm({...complaintForm, category: e.target.value})}
-                  >
-                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Priority Level</label>
-                  <select 
-                    className="form-control"
-                    value={complaintForm.priority}
-                    onChange={(e) => setComplaintForm({...complaintForm, priority: e.target.value})}
-                  >
-                    <option value="Low">Low (2-3 days)</option>
-                    <option value="Medium">Medium (Within 24h)</option>
-                    <option value="High">High (Immediate)</option>
-                  </select>
-                </div>
-
-                <div className="form-group full-width">
-                  <label>Detailed Issue Description *</label>
-                  <textarea 
-                    rows="3" 
-                    className="form-control" 
-                    placeholder="Describe the issue clearly (e.g. fan is not running, tap is leaking, wi-fi router not working)..."
-                    value={complaintForm.description}
-                    onChange={(e) => setComplaintForm({...complaintForm, description: e.target.value})}
-                    required
-                  />
-                </div>
+              <div className="form-group">
+                <label>Detailed Issue Description *</label>
+                <textarea 
+                  rows="4" 
+                  className="form-control" 
+                  placeholder="Describe your room maintenance issue clearly (e.g. tube light is flickering, tap is leaking, fan not working)..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  required
+                />
               </div>
 
               <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '6px' }}>
@@ -808,7 +733,7 @@ function App() {
             </form>
           </div>
 
-          {/* Right Column: Track My Complaints */}
+          {/* Right Column: Track My Complaints (Student can ONLY see their own) */}
           <div className="card">
             <div className="card-title" style={{ justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -816,38 +741,19 @@ function App() {
                 <span>My Complaints & Solution Status</span>
               </div>
               <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                {studentFilteredComplaints.length} Records
+                {myComplaints.length} Submitted
               </span>
             </div>
 
-            {/* Search Input */}
-            <div className="search-box" style={{ maxWidth: '100%', marginBottom: '16px' }}>
-              <Search size={16} color="#94a3b8" />
-              <input 
-                type="text" 
-                placeholder="Search by Roll No, Room, or Issue..."
-                value={studentSearchRoll}
-                onChange={(e) => setStudentSearchRoll(e.target.value)}
-              />
-              {studentSearchRoll && (
-                <button 
-                  onClick={() => setStudentSearchRoll('')} 
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}
-                >
-                  <X size={15} />
-                </button>
-              )}
-            </div>
-
-            {studentFilteredComplaints.length === 0 ? (
+            {myComplaints.length === 0 ? (
               <div className="empty-state">
-                <AlertCircle size={36} color="#94a3b8" />
-                <h4>No Requests Found</h4>
-                <p>Submit a new complaint using the form on the left.</p>
+                <FileText size={38} color="#94a3b8" />
+                <h4>No Complaints Raised Yet</h4>
+                <p>Fill out the form on the left to submit your first maintenance request.</p>
               </div>
             ) : (
-              <div style={{ maxHeight: '600px', overflowY: 'auto', paddingRight: '4px' }}>
-                {studentFilteredComplaints.map(comp => (
+              <div style={{ maxHeight: '620px', overflowY: 'auto', paddingRight: '4px' }}>
+                {myComplaints.map(comp => (
                   <div key={comp.id} className="timeline-item">
                     <div className="timeline-header">
                       <div>
@@ -855,9 +761,6 @@ function App() {
                           #{comp.id}
                         </span>
                         <strong style={{ fontSize: '0.95rem' }}>{comp.category}</strong>
-                        <span style={{ fontSize: '0.8rem', color: '#64748b', marginLeft: '6px' }}>
-                          ({comp.hostelBlock} - Room {comp.roomNo})
-                        </span>
                       </div>
                       <span className={`badge badge-${comp.status.toLowerCase().replace(' ', '-')}`}>
                         {comp.status === 'Resolved' ? '✅ SOLVED' : comp.status === 'In Progress' ? '⏳ WORKING' : '🔴 PENDING'}
@@ -892,7 +795,7 @@ function App() {
                       </div>
                     </div>
 
-                    {/* Assigned Technician Info */}
+                    {/* Staff Assigned Details */}
                     {comp.assignedStaff && (
                       <div className="staff-assigned-box">
                         <Wrench size={14} />
@@ -900,10 +803,10 @@ function App() {
                       </div>
                     )}
 
-                    {/* Resolution Remark */}
+                    {/* Solution Remarks from Warden/Staff */}
                     {comp.status === 'Resolved' && comp.resolutionRemarks && (
                       <div className="resolution-box">
-                        <CheckCircle2 size={15} />
+                        <CheckCircle2 size={16} />
                         <div>
                           <strong>Problem Solved!</strong>
                           <div style={{ marginTop: '2px' }}>{comp.resolutionRemarks}</div>
@@ -919,15 +822,15 @@ function App() {
       )}
 
       {/* ======================================================== */}
-      {/* 2. WARDEN & MAINTENANCE STAFF TASK BOARD                 */}
+      {/* B. STRICT WARDEN VIEW: VIEW ALL & UPDATE STATUS ONLY     */}
       {/* ======================================================== */}
-      {activePortal === 'WARDEN' && (
+      {!isStudent && (
         <div>
-          {/* Top KPI Stats Bar */}
+          {/* KPI Stats Bar */}
           <div className="stats-grid">
             <div className="stat-card">
               <div className="stat-info">
-                <p>Total Tasks</p>
+                <p>Total Complaints</p>
                 <h3>{stats.total}</h3>
               </div>
               <div className="stat-icon" style={{ background: '#e0e7ff', color: '#4338ca' }}>
@@ -937,7 +840,7 @@ function App() {
 
             <div className="stat-card">
               <div className="stat-info">
-                <p>Pending Review</p>
+                <p>Pending Action</p>
                 <h3>{stats.pending}</h3>
               </div>
               <div className="stat-icon" style={{ background: '#fee2e2', color: '#dc2626' }}>
@@ -947,7 +850,7 @@ function App() {
 
             <div className="stat-card">
               <div className="stat-info">
-                <p>Active Work</p>
+                <p>Active Work (In Progress)</p>
                 <h3>{stats.inProgress}</h3>
               </div>
               <div className="stat-icon" style={{ background: '#fef3c7', color: '#d97706' }}>
@@ -966,13 +869,13 @@ function App() {
             </div>
           </div>
 
-          {/* Controls Toolbar */}
+          {/* Warden Controls Toolbar */}
           <div className="toolbar">
             <div className="search-box">
               <Search size={18} color="#94a3b8" />
               <input 
                 type="text" 
-                placeholder="Search task, student, room, problem..."
+                placeholder="Search student, roll no, room, or issue..."
                 value={wardenSearch}
                 onChange={(e) => setWardenSearch(e.target.value)}
               />
@@ -1009,10 +912,10 @@ function App() {
             </div>
           </div>
 
-          {/* KANBAN TASK BOARD */}
+          {/* 3-COLUMN KANBAN TASK BOARD */}
           {wardenViewMode === 'KANBAN' && (
             <div className="kanban-board">
-              {/* COLUMN 1: PENDING */}
+              {/* 1. PENDING */}
               <div className="kanban-column pending-col">
                 <div className="kanban-col-header">
                   <h4>
@@ -1046,6 +949,11 @@ function App() {
                           <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
                             {comp.hostelBlock} • Room {comp.roomNo}
                           </div>
+                          {comp.studentPhone && (
+                            <div style={{ fontSize: '0.75rem', color: '#4f46e5', display: 'flex', alignItems: 'center', gap: '3px', marginTop: '2px' }}>
+                              <Phone size={11} /> {comp.studentPhone}
+                            </div>
+                          )}
                         </div>
 
                         <div style={{ fontWeight: 700, fontSize: '0.85rem', color: '#1e293b', marginBottom: '4px' }}>
@@ -1064,7 +972,7 @@ function App() {
                           <button 
                             className="btn-icon"
                             onClick={() => handleOpenSolveModal(comp)}
-                            title="Assign specific staff"
+                            title="Assign staff & update"
                           >
                             <Wrench size={14} />
                           </button>
@@ -1082,7 +990,7 @@ function App() {
                 </div>
               </div>
 
-              {/* COLUMN 2: IN PROGRESS */}
+              {/* 2. IN PROGRESS */}
               <div className="kanban-column progress-col">
                 <div className="kanban-col-header">
                   <h4>
@@ -1105,7 +1013,7 @@ function App() {
                         <div className="card-top-row">
                           <span className="card-task-id">#{comp.id}</span>
                           <span className="badge-staff">
-                            {comp.assignedStaff || 'Technician Assigned'}
+                            {comp.assignedStaff || 'Technician Working'}
                           </span>
                         </div>
 
@@ -1145,7 +1053,7 @@ function App() {
                 </div>
               </div>
 
-              {/* COLUMN 3: RESOLVED */}
+              {/* 3. RESOLVED */}
               <div className="kanban-column resolved-col">
                 <div className="kanban-col-header">
                   <h4>
@@ -1307,7 +1215,7 @@ function App() {
         </div>
       )}
 
-      {/* RESOLUTION MODAL */}
+      {/* RESOLUTION MODAL FOR WARDEN */}
       {isResolveModalOpen && resolveItem && (
         <div className="modal-overlay" onClick={() => setIsResolveModalOpen(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -1359,7 +1267,7 @@ function App() {
                   <label>Work Done Note / Resolution Remarks *</label>
                   <textarea 
                     rows="3" 
-                    className="form-control"
+                    className="form-control" 
                     placeholder="Describe what repair was done..."
                     value={remarksInput}
                     onChange={(e) => setRemarksInput(e.target.value)}
@@ -1382,7 +1290,7 @@ function App() {
         </div>
       )}
 
-      {/* EDIT MODAL */}
+      {/* EDIT MODAL FOR WARDEN */}
       {isEditModalOpen && editItem && (
         <div className="modal-overlay" onClick={() => setIsEditModalOpen(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
